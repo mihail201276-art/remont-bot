@@ -12,5 +12,6 @@ class Config(BaseSettings):
     yandex_bucket_name: str = ""
     yandex_static_key_id: str = ""
     yandex_static_key: str = ""
-    yandexgpt_model: str = "yandexgpt-lite"
+    yandexgpt_model: str = "yandexgpt-5.1/latest"
+    tg_proxy: str = ""
     database_url: str = "sqlite+aiosqlite:///remont_bot.db"

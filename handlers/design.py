@@ -1,13 +1,19 @@
+import asyncio
+import logging
+
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message
+from aiogram.types import BufferedInputFile, Message
 
-from database import get_or_create_user
+from database import get_chat_history, get_or_create_user, save_chat_message
 from model_registry import ModelRegistry
 
+logger = logging.getLogger(__name__)
+
 router = Router()
+MAX_LEN = 4000
 
 
 class DesignForm(StatesGroup):
@@ -62,6 +68,14 @@ async def process_wishes(message: Message, state: FSMContext):
     data = await state.get_data()
     wishes = message.text if message.text.lower() != "нет" else ""
 
+    description = (
+        f"Помещение: {data['room_type']}\n"
+        f"Стиль: {data['style']}\n"
+        f"Бюджет: {data['budget']}\n"
+    )
+    if wishes:
+        description += f"Пожелания: {wishes}"
+
     status_msg = await message.answer("\u23f3 Генерирую дизайн-проект...")
 
     user = await get_or_create_user(
@@ -72,27 +86,38 @@ async def process_wishes(message: Message, state: FSMContext):
 
     registry: ModelRegistry = message.bot.model_registry
     model = registry.get_model(user.current_model)
+    style_name = data["style"]
 
-    description = (
-        f"Помещение: {data['room_type']}\n"
-        f"Стиль: {data['style']}\n"
-        f"Бюджет: {data['budget']}\n"
-    )
-    if wishes:
-        description += f"Пожелания: {wishes}"
+    await save_chat_message(message.from_user.id, "user", description, model.info.id)
 
     try:
-        text = await model.generate_design(
-            description, data["style"], wishes or None
-        )
-    except Exception as e:
+        text = await model.generate_design(description, style_name, wishes or None)
+    except Exception:
+        logger.exception("Design generation error")
         await status_msg.edit_text(
-            f"\u274c Ошибка: {e}. Попробуйте переключить модель через /model"
+            "\u274c Ошибка. Попробуйте переключить модель через /model"
         )
         await state.clear()
         return
 
+    await save_chat_message(message.from_user.id, "assistant", text, model.info.id)
     await state.clear()
 
     footer = f"\n\n\u2014\n{model.info.icon} {model.info.name}"
+    max_body = MAX_LEN - len(footer)
+    if len(text) > max_body:
+        text = text[:max_body] + "..."
     await status_msg.edit_text(text + footer)
+
+    art = getattr(message.bot, "yandex_art", None)
+    if art:
+        try:
+            art_prompt = art.build_prompt(description, style_name)
+            image_bytes = await asyncio.wait_for(art.generate_image(art_prompt), timeout=20)
+            if image_bytes:
+                await message.answer_photo(
+                    photo=BufferedInputFile(image_bytes, filename="vizualization.jpg"),
+                    caption=f"\U0001f3a8 Визуализация в стиле <b>{style_name}</b>",
+                )
+        except Exception:
+            logger.exception("YandexART generation error")

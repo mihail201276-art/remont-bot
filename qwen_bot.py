@@ -10,9 +10,9 @@ SYSTEM_PROMPT = (
 )
 
 
-class YandexGPTBot(AIModel):
+class QwenBot(AIModel):
 
-    def __init__(self, api_key: str, folder_id: str, model: str = "yandexgpt"):
+    def __init__(self, api_key: str, folder_id: str, model: str = "qwen3.6-35b-a3b"):
         self.api_key = api_key
         self.folder_id = folder_id
         self.model = model
@@ -24,10 +24,10 @@ class YandexGPTBot(AIModel):
     @property
     def info(self) -> ModelInfo:
         return ModelInfo(
-            id="yandexgpt",
-            name="YandexGPT",
-            icon="\U0001f916",
-            description="Нейросеть от Яндекса",
+            id="qwen",
+            name="Qwen 3.6-35B",
+            icon="\U0001f9e0",
+            description="Мультимодальная модель от Yandex Cloud",
         )
 
     async def _chat_completion(self, messages: list[dict]) -> str:
@@ -35,7 +35,7 @@ class YandexGPTBot(AIModel):
             model=f"gpt://{self.folder_id}/{self.model}",
             messages=messages,
             temperature=0.6,
-            max_tokens=2000,
+            max_tokens=4000,
         )
         return response.choices[0].message.content
 
@@ -74,4 +74,20 @@ class YandexGPTBot(AIModel):
         return await self._chat_completion([
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": f"Вопрос по интерьеру: {question}"},
+        ])
+
+    async def analyze_image(self, image_bytes: bytes) -> str:
+        import base64
+        image_b64 = base64.b64encode(image_bytes).decode()
+        prompt = (
+            "Опиши это помещение для дизайн-проекта: "
+            "какая комната, размер (примерно), цветовая гамма, "
+            "какая мебель и предметы есть, состояние стен/пола/потолка, "
+            "освещение. Коротко, 3-5 предложений."
+        )
+        return await self._chat_completion([
+            {"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+            ]}
         ])

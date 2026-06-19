@@ -17,7 +17,7 @@ class User(Base):
     username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     current_model: Mapped[str] = mapped_column(
-        String(50), nullable=False, default="gigachat"
+        String(50), nullable=False, default="yandexgpt"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()

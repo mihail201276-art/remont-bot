@@ -1,16 +1,21 @@
+import asyncio
+import logging
+
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
+    BufferedInputFile,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
 )
 
-from database import get_or_create_user
-from image_service import ImageService
+from database import get_or_create_user, save_chat_message
 from model_registry import ModelRegistry
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -50,44 +55,30 @@ def _style_keyboard() -> InlineKeyboardMarkup:
 async def start_photo_flow(message: Message, state: FSMContext):
     await state.set_state(PhotoForm.waiting_photo)
     await message.answer(
-        "\U0001f4f8 Отправьте фото вашей комнаты, и я проанализирую её "
-        "и предложу дизайн-проект!"
+        "\U0001f4f8 <b>Опишите вашу комнату</b>\n\n"
+        "Напишите коротко: размеры, планировка, текущая отделка, "
+        "какая мебель есть, что хотите изменить.\n\n"
+        "Например:\n"
+        "<i>«Комната 4×5 м, потолок 2.7 м, одно окно, "
+        "пол ламинат, стены белые, нужна спальня»</i>"
     )
 
 
-@router.message(PhotoForm.waiting_photo, F.photo)
-async def handle_photo(message: Message, state: FSMContext):
-    status_msg = await message.answer("\u23f3 Анализирую помещение...")
-    file_id = message.photo[-1].file_id
-
-    try:
-        image_service: ImageService = message.bot.image_service
-        result = await image_service.process_room_photo(message.bot, file_id)
-    except Exception as e:
-        await status_msg.edit_text(
-            "\u274c Не удалось проанализировать фото. Попробуйте ещё раз."
-        )
-        await state.clear()
-        return
-
-    await state.update_data(
-        photo_url=result["photo_url"],
-        vision_description=result["description"],
-    )
+@router.message(PhotoForm.waiting_photo, F.text)
+async def handle_room_description(message: Message, state: FSMContext):
+    description = message.text
+    await state.update_data(description=description)
     await state.set_state(PhotoForm.waiting_style)
-
-    text = (
-        "\U0001f4f8 <b>Анализ помещения:</b>\n"
-        f"{result['description']}\n\n"
-        "\U0001f3a8 <b>Выберите стиль</b> для дизайн-проекта:"
+    await message.answer(
+        "\U0001f3a8 <b>Выберите стиль</b> для дизайн-проекта:",
+        reply_markup=_style_keyboard(),
     )
-    await status_msg.edit_text(text, reply_markup=_style_keyboard())
 
 
 @router.message(PhotoForm.waiting_photo)
 async def handle_not_photo(message: Message, state: FSMContext):
     await message.answer(
-        "\U0001f4f8 Пожалуйста, отправьте фотографию комнаты (не текст)."
+        "\U0001f4f8 Пожалуйста, опишите комнату текстом."
     )
 
 
@@ -110,17 +101,22 @@ async def cb_photo_style(callback: CallbackQuery, state: FSMContext):
     registry: ModelRegistry = callback.bot.model_registry
     model = registry.get_model(user.current_model)
 
+    room_desc = data.get("description", "помещение")
+
+    await save_chat_message(callback.from_user.id, "user", f"Фото комнаты, стиль: {style_name}. Описание: {room_desc}", model.info.id)
+
     try:
-        text = await model.generate_design(
-            data.get("vision_description", "помещение"), style_name
-        )
-    except Exception as e:
+        text = await model.generate_design(room_desc, style_name)
+    except Exception:
+        logger.exception("Photo design generation error")
         await callback.message.answer(
-            f"\u274c Ошибка генерации: {e}. Попробуйте переключить модель через /model"
+            "\u274c Ошибка генерации. Попробуйте переключить модель через /model"
         )
         await state.clear()
         await callback.answer()
         return
+
+    await save_chat_message(callback.from_user.id, "assistant", text, model.info.id)
 
     await state.set_state(PhotoForm.waiting_style)
 
@@ -139,7 +135,24 @@ async def cb_photo_style(callback: CallbackQuery, state: FSMContext):
         ]
     )
 
+    max_body = 4000 - len(footer)
+    if len(text) > max_body:
+        text = text[:max_body] + "..."
+
     await callback.message.answer(text + footer, reply_markup=kb)
+
+    art = getattr(callback.bot, "yandex_art", None)
+    if art:
+        try:
+            art_prompt = art.build_prompt(room_desc, style_name)
+            image_bytes = await asyncio.wait_for(art.generate_image(art_prompt), timeout=20)
+            if image_bytes:
+                await callback.message.answer_photo(
+                    photo=BufferedInputFile(image_bytes, filename="vizualization.jpg"),
+                    caption=f"\U0001f3a8 Визуализация в стиле <b>{style_name}</b>",
+                )
+        except Exception:
+            logger.exception("YandexART generation error")
     await callback.answer()
 
 

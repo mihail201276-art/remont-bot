@@ -1,13 +1,18 @@
+import logging
+
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message
 
-from database import get_or_create_user
+from database import get_chat_history, get_or_create_user, save_chat_message
 from model_registry import ModelRegistry
 
+logger = logging.getLogger(__name__)
+
 router = Router()
+MAX_LEN = 4000
 
 
 class InteriorForm(StatesGroup):
@@ -46,13 +51,23 @@ async def process_interior_question(message: Message, state: FSMContext):
     registry: ModelRegistry = message.bot.model_registry
     model = registry.get_model(user.current_model)
 
+    await save_chat_message(message.from_user.id, "user", message.text, model.info.id)
+
     try:
-        text = await model.interior_tip(message.text)
-    except Exception as e:
+        history = await get_chat_history(message.from_user.id, limit=6)
+        history = history[:-1]
+        text = await model.chat(history)
+    except Exception:
+        logger.exception("Interior handler error")
         await status_msg.edit_text(
-            f"\u274c Ошибка: {e}. Попробуйте переключить модель через /model"
+            "\u274c Ошибка. Попробуйте переключить модель через /model"
         )
         return
 
+    await save_chat_message(message.from_user.id, "assistant", text, model.info.id)
+
     footer = f"\n\n\u2014\n{model.info.icon} {model.info.name}"
+    max_body = MAX_LEN - len(footer)
+    if len(text) > max_body:
+        text = text[:max_body] + "..."
     await status_msg.edit_text(text + footer)

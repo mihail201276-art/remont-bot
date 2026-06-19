@@ -4,7 +4,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config import Config
-from models import Base, User
+from models import Base, ChatHistory, User
 
 engine = None
 async_session = None
@@ -65,3 +65,41 @@ async def set_user_model(telegram_id: int, model_id: str):
             .values(current_model=model_id, last_active=datetime.utcnow())
         )
         await session.commit()
+
+
+async def save_chat_message(telegram_id: int, role: str, text: str, model_used: str | None = None):
+    async with async_session() as session:
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            return
+        msg = ChatHistory(
+            user_id=user.id,
+            role=role,
+            model_used=model_used,
+            message_text=text,
+        )
+        session.add(msg)
+        await session.commit()
+
+
+async def get_chat_history(telegram_id: int, limit: int = 10) -> list[dict]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            return []
+        rows = await session.execute(
+            select(ChatHistory)
+            .where(ChatHistory.user_id == user.id)
+            .order_by(ChatHistory.created_at.desc())
+            .limit(limit)
+        )
+        messages = []
+        for row in reversed(list(rows.scalars())):
+            messages.append({"role": row.role, "content": row.message_text})
+        return messages

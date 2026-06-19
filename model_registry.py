@@ -15,6 +15,9 @@ class ModelRegistry:
             return next(iter(self._models.values()))
         return model
 
+    def get(self, model_id: str) -> AIModel | None:
+        return self._models.get(model_id)
+
     def list_models(self) -> list[ModelInfo]:
         return [m.info for m in self._models.values()]
 

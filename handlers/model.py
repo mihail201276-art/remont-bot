@@ -21,6 +21,11 @@ def _model_keyboard(registry: ModelRegistry, current: str) -> InlineKeyboardMark
         buttons.append(
             [InlineKeyboardButton(text=label, callback_data=f"set_model:{m.id}")]
         )
+    if not registry.get("gigachat"):
+        label = "🚫 GigaChat (скоро)"
+        buttons.append(
+            [InlineKeyboardButton(text=label, callback_data="set_model:gigachat_pending")]
+        )
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -51,6 +56,10 @@ async def cmd_model(message: Message, state: FSMContext):
 async def cb_set_model(callback: CallbackQuery):
     model_id = callback.data.split(":")[1]
     registry: ModelRegistry = callback.bot.model_registry
+
+    if model_id == "gigachat_pending":
+        await callback.answer("GigaChat пока не подключён. API-ключ появится позже.", show_alert=True)
+        return
 
     await set_user_model(callback.from_user.id, model_id)
 
