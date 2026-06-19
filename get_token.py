@@ -13,7 +13,7 @@ async def get_gigachat_token(credentials: str, scope: str) -> dict:
         "Content-Type": "application/x-www-form-urlencoded",
     }
 
-    async with httpx.AsyncClient(verify=False) as client:
+    async with httpx.AsyncClient() as client:
         response = await client.post(
             "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
             headers=headers,

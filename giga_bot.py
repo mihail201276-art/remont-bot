@@ -35,7 +35,7 @@ class GigaChatBot(AIModel):
         await self._ensure_token()
         token = self._token_data["access_token"]
 
-        async with httpx.AsyncClient(verify=False) as client:
+        async with httpx.AsyncClient() as client:
             response = await client.post(
                 "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
                 headers={
@@ -55,7 +55,10 @@ class GigaChatBot(AIModel):
     async def chat(self, history: list[dict]) -> str:
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         for msg in history:
-            messages.append({"role": msg["role"], "content": msg["text"]})
+            if "content" in msg:
+                messages.append({"role": msg["role"], "content": msg["content"]})
+            else:
+                messages.append({"role": msg["role"], "content": msg.get("text", "")})
         return await self._chat_completion(messages)
 
     async def generate_design(self, description: str, style: str, wishes: str | None = None) -> str:

@@ -9,7 +9,7 @@ from aiogram.enums import ParseMode
 from config import Config
 from database import init_db
 from giga_bot import GigaChatBot
-from handlers import start, help, model, photo, design, repair, interior
+from handlers import start, help, model, photo, design, repair, interior, clear
 from model_registry import ModelRegistry
 from qwen_bot import QwenBot
 from yandex_art import YandexART
@@ -64,6 +64,7 @@ async def run_bot(config: Config) -> None:
     dp.include_router(design.router)
     dp.include_router(repair.router)
     dp.include_router(interior.router)
+    dp.include_router(clear.router)
 
     logger.info("Бот запущен")
     try:

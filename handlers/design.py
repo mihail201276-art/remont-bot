@@ -66,7 +66,7 @@ async def process_budget(message: Message, state: FSMContext):
 @router.message(DesignForm.wishes)
 async def process_wishes(message: Message, state: FSMContext):
     data = await state.get_data()
-    wishes = message.text if message.text.lower() != "нет" else ""
+    wishes = message.text if message.text.strip().lower() not in ("нет", "нет.", "no", "нема", "не") else ""
 
     description = (
         f"Помещение: {data['room_type']}\n"
